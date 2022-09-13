@@ -21,7 +21,7 @@ $ sudo apt install pkgconfig libpng
 ```swift
 let image = try PNGImage(contentsOf: ".../image.png")
 // or
-let url = URL(string: "https://example.com/image.png)!
+let url = URL(string: "https://example.com/image.png")!
 let image = try PNGImage(contentsOf: url)
 // or
 let data: Data = ...
