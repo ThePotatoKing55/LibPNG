@@ -2,7 +2,7 @@
 
 Swift API for libpng
 
-##Usage
+## Usage
 
 Install libpng and pkg-conf
 
@@ -16,7 +16,7 @@ On Linux, using `apt`:
 $ sudo apt install pkgconfig libpng
 ```
 
-###Reading
+### Reading
 
 ```swift
 let image = try PNGImage(contentsOf: ".../image.png")
@@ -28,7 +28,7 @@ let data: Data = ...
 let image = try PNGImage(data: data)
 ```
 
-###Writing
+### Writing
 
 ```swift
 let pixelData: [UInt8] = [...]
