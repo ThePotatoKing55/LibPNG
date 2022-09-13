@@ -19,91 +19,58 @@ import XCTest
 @testable import LibPNG
 
 final class LibPNGTests: XCTestCase {
-    func testWriteGreyscaleImage() {
-        var pixels = [UInt8]()
-        for r in 0..<200 {
-            for c in 0..<300 {
-                let value = UInt8((r+c)/2)
-                pixels.append(value)
-            }
-        }
-        
-        let image = try! Image(width: 300, height: 200, colorType: ColorType.greyscale, bitDepth: 8, pixels: pixels)
-        try! image.write(to: URL(string: "/tmp/greyscaleImage.png")!)
-    }
-
-    func testWriteDoubleImage() {
-        var pixels = [Double]()
-        
-        for _ in 0..<200 {
-            for _ in 0..<300 {
-                pixels.append(drand48())
-            }
-        }
-        
-        let image = try! Image(width: 300, height: 200, colorType: .greyscale, pixelValues: pixels)
-        try! image.write(to: URL(string: "/tmp/greyscaleDoubleNormalisaedImage.png")!)
-    }
-
-    func testWriteDoubleColoredImage() {
-        var pixels = [Double]()
-        
-        for r in 0..<200 {
-            for _ in 0..<300  {
-                if r % 2 == 0 {
-                    pixels.append(0.25)
-                    pixels.append(0.75)
-                    pixels.append(0.25)
-                } else {
-                    pixels.append(drand48())
-                    pixels.append(drand48())
-                    pixels.append(drand48())
-                }
-            }
-        }
-        
-        let image = try! Image(width: 300, height: 200, colorType: .rgb, pixelValues: pixels)
-        try! image.write(to: URL(string: "/tmp/greyscaleDoubleColoredNormalisaedImage.png")!)
-    }
-    
-    func testGetImageData() {
-        var pixels = [Double]()
-        
-        for r in 0..<200 {
-            for _ in 0..<300  {
-                if r % 2 == 0 {
-                    pixels.append(0.25)
-                    pixels.append(0.75)
-                    pixels.append(0.25)
-                } else {
-                    pixels.append(drand48())
-                    pixels.append(drand48())
-                    pixels.append(drand48())
-                }
-            }
-        }
-        
-        let image = try! Image(width: 300, height: 200, colorType: .rgb, pixelValues: pixels)
-        if let data = image.data {
-            try! data.write(to: URL(string: "file:///tmp/imageData.png")!)
-        }
-        XCTAssert(image.data != nil)
-    }
-    
-    
     func testInitSolidColorImage() {
-        XCTAssertNoThrow(try Image(width: 800, height: 600, colorType: .rgb, pixelValues: [Double](repeating: 0, count: 800 * 600 * 3)))
-        XCTAssertNoThrow(try Image(width: 800, height: 600, colorType: .rgb, pixelValues: [Double](repeating: 0.5, count: 800 * 600 * 3)))
-        XCTAssertNoThrow(try Image(width: 800, height: 600, colorType: .rgb, pixelValues: [Double](repeating: 1, count: 800 * 600 * 3)))
+        XCTAssertNoThrow(try PNGImage(width: 800, height: 600, colorType: .rgb, pixelData: [Double](repeating: 0, count: 800 * 600 * 3)))
+        XCTAssertNoThrow(try PNGImage(width: 800, height: 600, colorType: .rgb, pixelData: [Double](repeating: 0.5, count: 800 * 600 * 3)))
+        XCTAssertNoThrow(try PNGImage(width: 800, height: 600, colorType: .rgb, pixelData: [Double](repeating: 1, count: 800 * 600 * 3)))
     }
     
+    func testReadWrite() {
+        let path = "/tmp/randimage.png"
+        
+        let imageData = (0..<(64*64*4)).map { _ in
+            UInt8.random(in: .min ... .max)
+        }
+        let image = try? PNGImage(width: 64, height: 64, colorType: .rgba, bitDepth: 8, pixelData: imageData)
+        XCTAssertNotNil(image)
+        XCTAssertNoThrow(try image!.write(to: path))
+        
+        let read = try? PNGImage(contentsOf: path)
+        XCTAssertNotNil(read)
+        XCTAssertEqual(imageData, read!.pixelData)
+    }
+    
+    func testReadWriteURL() {
+        let url = URL(string: "file:///tmp/randimage_url.png")!
+        
+        let imageData = (0..<(64*64*4)).map { _ in
+            UInt8.random(in: .min ... .max)
+        }
+        let image = try? PNGImage(width: 64, height: 64, colorType: .rgba, bitDepth: 8, pixelData: imageData)
+        XCTAssertNotNil(image)
+        XCTAssertNoThrow(try image!.write(to: url))
+        
+        let read = try? PNGImage(contentsOf: url)
+        XCTAssertNotNil(read)
+        XCTAssertEqual(imageData, read!.pixelData)
+    }
+    
+    func testRemoteRead() {
+        let url = "https://www.google.com/images/branding/googlelogo/2x/googlelogo_light_color_272x92dp.png"
+        XCTAssertThrowsError(try PNGImage(contentsOf: url))
+    }
+    
+    func testRemoteReadFromURL() {
+        let url = URL(string: "https://www.google.com/images/branding/googlelogo/2x/googlelogo_light_color_272x92dp.png")!
+        XCTAssertNoThrow(try PNGImage(contentsOf: url))
+    }
     
     static var allTests = [
-        ("testGetImageData", testGetImageData),
-        ("testWriteDoubleColoredImage", testWriteDoubleColoredImage),
-        ("testWriteDoubleImage", testWriteDoubleImage),
-        ("testWriteGreyscaleImage", testWriteGreyscaleImage),
         ("testInitSolidColorImage", testInitSolidColorImage),
+        ("testReadWrite", testReadWrite),
+        ("testReadWriteURL", testReadWriteURL),
+        ("testRemoteRead", testRemoteRead),
+        ("testRemoteReadFromURL", testRemoteReadFromURL),
     ]
 }
 

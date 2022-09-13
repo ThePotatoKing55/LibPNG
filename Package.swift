@@ -1,4 +1,4 @@
-// swift-tools-version:4.2
+// swift-tools-version:5.5
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -8,9 +8,8 @@ let package = Package(
     products: [
         .library(name: "LibPNG", targets: ["LibPNG"]),
     ],
-    dependencies: [],
     targets: [
-        .systemLibrary(name: "CPNG", path: "Library/CPNG", pkgConfig: "libpng", providers: [ .brew(["libpng"]), .apt(["libpng"])]),
+        .systemLibrary(name: "CPNG", path: "Libraries/CPNG", pkgConfig: "libpng", providers: [ .brew(["libpng"]), .apt(["libpng"])]),
         .target(name: "LibPNG", dependencies: ["CPNG"]),
         .testTarget(name: "LibPNGTests", dependencies: ["LibPNG"]),
     ]
