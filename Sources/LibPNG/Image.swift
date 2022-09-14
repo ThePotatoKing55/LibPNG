@@ -1,6 +1,75 @@
 @_implementationOnly import CPNG
 
 public struct PNGImage {
+    public struct RGBA: Hashable, RawRepresentable, ExpressibleByIntegerLiteral {
+        public var redBits: UInt8 = .min
+        public var greenBits: UInt8 = .min
+        public var blueBits: UInt8 = .min
+        public var alphaBits: UInt8 = .max
+        
+        @usableFromInline func denormalize(_ v: Double) -> UInt8 {
+            return UInt8(Double(UInt8.max) * v)
+        }
+        @usableFromInline func normalize(_ v: UInt8) -> Double {
+            return Double(v) / Double(UInt8.max)
+        }
+        
+        @inlinable public var red: Double {
+            get { normalize(redBits) }
+            set { redBits = denormalize(newValue) }
+        }
+        @inlinable public var green: Double {
+            get { normalize(greenBits) }
+            set { greenBits = denormalize(newValue) }
+        }
+        @inlinable public var blue: Double {
+            get { normalize(blueBits) }
+            set { blueBits = denormalize(newValue) }
+        }
+        @inlinable public var alpha: Double {
+            get { normalize(alphaBits) }
+            set { alphaBits = denormalize(newValue) }
+        }
+        
+        @inlinable public var rawValue: UInt32 {
+            unsafeBitCast(self, to: UInt32.self)
+        }
+        @inlinable public init(rawValue: UInt32) {
+            self = unsafeBitCast(rawValue, to: Self.self)
+        }
+        @inlinable public init(integerLiteral value: UInt32) {
+            self.init(rawValue: value)
+        }
+        
+        @inlinable public init() {
+            self = 0x000000FF
+        }
+        
+        @inlinable public init(redBits: UInt8, greenBits: UInt8, blueBits: UInt8, alphaBits: UInt8 = .max) {
+            self.redBits = redBits
+            self.greenBits = greenBits
+            self.blueBits = blueBits
+            self.alphaBits = alphaBits
+        }
+        @inlinable public init(red: Double, green: Double, blue: Double, alpha: Double = 1.0) {
+            self.redBits = denormalize(red)
+            self.greenBits = denormalize(green)
+            self.blueBits = denormalize(blue)
+            self.alphaBits = denormalize(alpha)
+        }
+        @inlinable public init(gray: Double, alpha: Double = 1.0) {
+            self.init(red: gray, green: gray, blue: gray, alpha: alpha)
+        }
+        
+        @inlinable public static func random(using generator: inout some RandomNumberGenerator) -> RGBA {
+            return .init(rawValue: .random(in: .min ... .max, using: &generator))
+        }
+        @inlinable public static func random() -> RGBA {
+            var generator = SystemRandomNumberGenerator()
+            return .random(using: &generator)
+        }
+    }
+    
     public enum ColorType: UInt8, RawRepresentable, CaseIterable {
         case gray = 0
         case rgb = 2
@@ -24,53 +93,37 @@ public struct PNGImage {
         }
     }
     
-    public internal(set) var width: Int
-    public internal(set) var height: Int
-    public internal(set) var colorType: ColorType
-    public internal(set) var bitDepth: Int
-    public internal(set) var pixelData: [UInt8]
-    
-    @_transparent
-    var rowByteCount: Int {
-        width * colorType.componentCount * bitDepth / 8
-    }
+    public let width: Int
+    public let height: Int
+    public internal(set) var pixels: [RGBA]
     
     @_transparent
     func assertValidSize() throws {
-        guard pixelData.count == height * rowByteCount else {
+        guard pixels.count == width * height else {
             throw PNGError.incorrectDataSize
         }
     }
     
-    public subscript(x: Int, y: Int) -> UInt8 {
-        _read { yield pixelData[y * rowByteCount + x] }
-        _modify { yield &pixelData[y * rowByteCount + x] }
+    public subscript(x: Int, y: Int) -> RGBA {
+        _read { yield pixels[y * width + x] }
+        _modify { yield &pixels[y * width + x] }
     }
     
-    public init(width: Int, height: Int, colorType: ColorType, bitDepth: Int, pixelData: [UInt8]) throws {
+    public init(width: Int, height: Int, pixels: [RGBA]) throws {
         self.width = width
         self.height = height
-        self.colorType = colorType
-        self.bitDepth = bitDepth
-        self.pixelData = pixelData
+        self.pixels = pixels
         try assertValidSize()
     }
     
-    public init<T: BinaryFloatingPoint>(width: Int, height: Int, colorType: ColorType, pixelData: [T]) throws {
-        try self.init(width: width, height: height, colorType: colorType, bitDepth: 8, pixelData: pixelData.map { sample in
-            UInt8(sample * T(UInt8.max))
-        })
-    }
-    
     @_transparent
-    init(path: String, setIO: (png_structp?, png_infop?, () throws -> Void) throws -> Void, finalize: ((png_structp?, png_infop?, () throws -> Void) throws -> Void)? = nil) throws {
+    init(setIO: (png_structp?, png_infop?, () throws -> Void) throws -> Void, finalize: ((png_structp?, png_infop?, () throws -> Void) throws -> Void)? = nil) throws {
         /* adapted from https://gist.github.com/niw/5963798 */
-        typealias ErrorPair = (path: String, error: PNGError?)
-        var error: ErrorPair = (path, nil)
+        var error: PNGError?
         
         let catchError: png_error_ptr = { png, description in
-            png_get_error_ptr(png).withMemoryRebound(to: ErrorPair.self, capacity: 1) { pointer in
-                pointer.pointee.error = .readError(path: pointer.pointee.path, description: description.map(String.init(cString:)))
+            png_get_error_ptr(png).withMemoryRebound(to: PNGError?.self, capacity: 1) { pointer in
+                pointer.pointee = .readError(description: description.map(String.init(cString:)))
             }
         }
         let catchWarn: png_error_ptr = { png, description in
@@ -79,18 +132,18 @@ public struct PNGImage {
         
         @_transparent
         func assertNoError() throws {
-            if let error = error.error {
+            if let error {
                 throw error
             }
         }
         
         var png = png_create_read_struct(PNG_LIBPNG_VER_STRING, &error, catchError, catchWarn)
         guard png != nil else {
-            throw PNGError.unableToOpenFile(error.path)
+            throw PNGError.unableToOpenFile
         }
         
         var info = png_create_info_struct(png)
-        guard info != nil else { throw error.error! }
+        guard info != nil else { throw error! }
         defer { png_destroy_read_struct(&png, &info, nil) }
         try setIO(png, info, assertNoError)
         
@@ -99,8 +152,9 @@ public struct PNGImage {
         
         self.width = Int(png_get_image_width(png, info))
         self.height = Int(png_get_image_height(png, info))
-        self.colorType = ColorType(rawValue: png_get_color_type(png, info))!
-        self.bitDepth = Int(png_get_bit_depth(png, info))
+        
+        let colorType = ColorType(rawValue: png_get_color_type(png, info))!
+        let bitDepth = Int(png_get_bit_depth(png, info))
         
         if bitDepth == 16 { png_set_strip_16(png) }
         if colorType == .palette { png_set_palette_to_rgb(png) }
@@ -131,8 +185,8 @@ public struct PNGImage {
         png_read_image(png, rows)
         try assertNoError()
         
-        self.pixelData = UnsafeMutableBufferPointer(start: rows, count: height).flatMap { row in
-            Array(UnsafeMutableBufferPointer(start: row, count: rowbytes))
+        self.pixels = UnsafeMutableBufferPointer(start: rows, count: height).flatMap { row in
+            UnsafeMutableBufferPointer(start: row, count: rowbytes).withMemoryRebound(to: RGBA.self, Array.init)
         }
         
         try finalize?(png, info, assertNoError)
@@ -141,24 +195,22 @@ public struct PNGImage {
     public init(contentsOf path: some StringProtocol) throws {
         let path = String(path)
         guard let fp = fopen(path, "rb") else {
-            throw PNGError.unableToOpenFile(String(path))
+            throw PNGError.unableToOpenFile
         }
-        try self.init(path: path) { png, info, assertNoError in
+        try self.init { png, info, assertNoError in
             png_init_io(png, fp)
         } finalize: { _, _, _ in
             fclose(fp)
         }
     }
     
-    @_transparent
-    func write(path: String, setIO: (png_structp?, png_infop?, () throws -> Void) throws -> Void, finalize: ((png_structp?, png_infop?, () throws -> Void) throws -> Void)? = nil) throws {
+    func write(setIO: (png_structp?, png_infop?, () throws -> Void) throws -> Void, finalize: ((png_structp?, png_infop?, () throws -> Void) throws -> Void)? = nil) throws {
         /* adapted from https://gist.github.com/niw/5963798 */
-        typealias ErrorPair = (path: String, error: PNGError?)
-        var error: ErrorPair = (path, nil)
+        var error: PNGError?
         
         let catchError: png_error_ptr = { png, description in
-            png_get_error_ptr(png).withMemoryRebound(to: ErrorPair.self, capacity: 1) { pointer in
-                pointer.pointee.error = .readError(path: pointer.pointee.path, description: description.map(String.init(cString:)))
+            png_get_error_ptr(png).withMemoryRebound(to: PNGError?.self, capacity: 1) { pointer in
+                pointer.pointee = .readError(description: description.map(String.init(cString:)))
             }
         }
         let catchWarn: png_error_ptr = { png, description in
@@ -167,18 +219,18 @@ public struct PNGImage {
         
         @_transparent
         func assertNoError() throws {
-            if let error = error.error {
+            if let error {
                 throw error
             }
         }
         
         var png = png_create_write_struct(PNG_LIBPNG_VER_STRING, &error, catchError, catchWarn)
         guard png != nil else {
-            throw PNGError.unableToOpenFile(error.path)
+            throw PNGError.unableToOpenFile
         }
         
         var info = png_create_info_struct(png)
-        guard info != nil else { throw error.error! }
+        guard info != nil else { throw error! }
         defer { png_destroy_write_struct(&png, &info) }
         try setIO(png, info, assertNoError)
         
@@ -186,8 +238,8 @@ public struct PNGImage {
                      info,
                      .init(width),
                      .init(height),
-                     .init(bitDepth),
-                     .init(colorType.rawValue),
+                     8,
+                     .init(ColorType.rgba.rawValue),
                      PNG_INTERLACE_NONE,
                      PNG_COMPRESSION_TYPE_DEFAULT,
                      PNG_FILTER_TYPE_DEFAULT)
@@ -196,12 +248,13 @@ public struct PNGImage {
         
         let rows = UnsafeMutableBufferPointer<UnsafeMutablePointer<png_byte>?>.allocate(capacity: height)
         
-        let rowByteCount = self.rowByteCount
         for y in 0 ..< height {
-            let i = y * rowByteCount
-            let row = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: rowByteCount)
-            _ = row.initialize(from: pixelData[i ..< i+rowByteCount])
-            rows[y] = row.baseAddress
+            let i = y * width
+            let row = UnsafeMutableBufferPointer<RGBA>.allocate(capacity: width)
+            _ = row.initialize(from: pixels[i ..< i+width])
+            row.withMemoryRebound(to: png_byte.self) { row in
+                rows[y] = row.baseAddress
+            }
         }
         
         png_write_image(png, rows.baseAddress)
@@ -210,11 +263,12 @@ public struct PNGImage {
         try finalize?(png, info, assertNoError)
     }
     
-    public func write(to path: String) throws {
+    public func write(to path: some StringProtocol) throws {
+        let path = String(path)
         guard let fp = fopen(path, "wb") else {
-            throw PNGError.unableToOpenFile(path)
+            throw PNGError.unableToOpenFile
         }
-        try self.write(path: path) { png, info, assertNoError in
+        try self.write { png, info, assertNoError in
             png_init_io(png, fp)
         } finalize: { _, _, _ in
             fclose(fp)
@@ -229,7 +283,7 @@ extension PNGImage {
     public init(data: Data) throws {
         var reader = data.makeIterator()
         
-        try self.init(path: "Data") { png, info, assertNoError in
+        try self.init { png, info, assertNoError in
             png_set_read_fn(png, &reader) { png, bytes, byteCount in
                 png_get_io_ptr(png).withMemoryRebound(to: Data.Iterator.self, capacity: 1) { pointer in
                     for i in 0 ..< byteCount {
@@ -252,9 +306,9 @@ extension PNGImage {
 
 extension PNGImage {
     public func write(to data: inout Data) throws {
-        data.reserveCapacity(pixelData.count)
+        data.reserveCapacity(pixels.count * MemoryLayout<RGBA>.size)
         
-        try self.write(path: "Data") { png, info, assertNoError in
+        try self.write { png, info, assertNoError in
             png_set_write_fn(png, &data) { png, bytes, byteCount in
                 png_get_io_ptr(png).withMemoryRebound(to: Data.self, capacity: 1) { pointer in
                     pointer.pointee.append(bytes!, count: byteCount)

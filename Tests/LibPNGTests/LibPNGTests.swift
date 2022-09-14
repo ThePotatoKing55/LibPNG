@@ -20,39 +20,39 @@ import XCTest
 
 final class LibPNGTests: XCTestCase {
     func testInitSolidColorImage() {
-        XCTAssertNoThrow(try PNGImage(width: 800, height: 600, colorType: .rgb, pixelData: [Double](repeating: 0, count: 800 * 600 * 3)))
-        XCTAssertNoThrow(try PNGImage(width: 800, height: 600, colorType: .rgb, pixelData: [Double](repeating: 0.5, count: 800 * 600 * 3)))
-        XCTAssertNoThrow(try PNGImage(width: 800, height: 600, colorType: .rgb, pixelData: [Double](repeating: 1, count: 800 * 600 * 3)))
+        XCTAssertNoThrow(try PNGImage(width: 800, height: 600, pixels: .init(repeating: 0x000000FF, count: 800*600)))
+        XCTAssertNoThrow(try PNGImage(width: 800, height: 600, pixels: .init(repeating: 0x7F7F7FFF, count: 800*600)))
+        XCTAssertNoThrow(try PNGImage(width: 800, height: 600, pixels: .init(repeating: 0xFFFFFFFF, count: 800*600)))
     }
     
     func testReadWrite() {
         let path = "/tmp/randimage.png"
         
-        let imageData = (0..<(64*64*4)).map { _ in
-            UInt8.random(in: .min ... .max)
+        let imageData = (0 ..< 64*64).map { _ in
+            PNGImage.RGBA.random()
         }
-        let image = try? PNGImage(width: 64, height: 64, colorType: .rgba, bitDepth: 8, pixelData: imageData)
+        let image = try? PNGImage(width: 64, height: 64, pixels: imageData)
         XCTAssertNotNil(image)
         XCTAssertNoThrow(try image!.write(to: path))
         
         let read = try? PNGImage(contentsOf: path)
         XCTAssertNotNil(read)
-        XCTAssertEqual(imageData, read!.pixelData)
+        XCTAssertEqual(imageData, read!.pixels)
     }
     
     func testReadWriteURL() {
         let url = URL(string: "file:///tmp/randimage_url.png")!
         
-        let imageData = (0..<(64*64*4)).map { _ in
-            UInt8.random(in: .min ... .max)
+        let imageData = (0 ..< 64*64).map { _ in
+            PNGImage.RGBA.random()
         }
-        let image = try? PNGImage(width: 64, height: 64, colorType: .rgba, bitDepth: 8, pixelData: imageData)
+        let image = try? PNGImage(width: 64, height: 64, pixels: imageData)
         XCTAssertNotNil(image)
         XCTAssertNoThrow(try image!.write(to: url))
         
         let read = try? PNGImage(contentsOf: url)
         XCTAssertNotNil(read)
-        XCTAssertEqual(imageData, read!.pixelData)
+        XCTAssertEqual(imageData, read!.pixels)
     }
     
     func testRemoteRead() {
